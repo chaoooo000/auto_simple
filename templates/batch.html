@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>批量处理 - 简历智能解析系统</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+</head>
+<body>
+    <div class="bg-decor" aria-hidden="true"></div>
+    <nav class="navbar" role="navigation" aria-label="主导航">
+        <div class="nav-brand">
+            <div class="brand-icon" aria-hidden="true">📄</div>
+            <span class="brand-text">简历智能解析系统</span>
+        </div>
+        <div class="nav-links">
+            <a href="/" class="{{ active_upload }}">🎯 简历解析</a>
+            <a href="/batch" class="{{ active_batch }}" aria-current="page">📦 批量处理</a>
+            <a href="/summary" class="{{ active_summary }}">📊 数据汇总</a>
+        </div>
+    </nav>
+    <main class="container" role="main">
+        <div class="page-header">
+            <div class="header-badge">⚡ Batch Processing</div>
+            <h1>批量简历处理</h1>
+            <p>一次上传多个简历文件，系统将并发处理所有文件并汇总结果</p>
+        </div>
+
+        <div class="upload-section">
+            <div class="upload-zone" id="dropZone" role="button" tabindex="0" aria-label="点击或拖拽上传多个简历文件">
+                <input type="file" id="batchFileInput" accept=".pdf,.txt,.docx,.doc,.jpg,.jpeg,.png,.bmp,.tiff,.tif" multiple hidden aria-hidden="true">
+                <div class="zone-inner">
+                    <div class="upload-icon-circle">
+                        <span class="upload-icon-emoji" aria-hidden="true">📦</span>
+                    </div>
+                    <p class="upload-text">拖拽多个文件到此处，或点击选择文件</p>
+                    <p class="upload-hint">支持 PDF、DOCX、TXT、JPG、PNG 等格式</p>
+                    <div class="upload-formats">
+                        <span class="format-tag">PDF</span>
+                        <span class="format-tag">DOCX</span>
+                        <span class="format-tag">TXT</span>
+                        <span class="format-tag">JPG</span>
+                        <span class="format-tag">PNG</span>
+                    </div>
+                    <div id="batchFileList" class="file-list"></div>
+                </div>
+            </div>
+            <div class="batch-controls">
+                <label for="workers">并发数：<input type="number" id="workers" value="4" min="1" max="8" class="input-number" aria-label="并发处理线程数"></label>
+                <button id="batchBtn" class="btn-primary" disabled aria-label="开始批量处理" style="flex:1">
+                    <span class="btn-label">🚀 开始批量处理</span>
+                    <span class="spinner" style="display:none" aria-hidden="true"></span>
+                </button>
+            </div>
+            <div id="batchStatus" class="status hidden" role="status" aria-live="polite"></div>
+            <progress id="batchProgress" value="0" max="100" class="hidden" aria-label="处理进度"></progress>
+        </div>
+
+        <div id="skeletonTableSection" class="hidden"></div>
+
+        <div id="batchResultSection" class="hidden result-enter">
+            <div class="result-header-bar">
+                <h2>📊 处理结果汇总（<span id="totalCount">0</span> 项）</h2>
+                <span id="resultPermalink" style="font-size:var(--text-sm);color:var(--text-secondary)"></span>
+            </div>
+            <div class="table-wrapper">
+                <table id="summaryTable" aria-label="批量处理结果表">
+                    <thead><tr><th>文件名</th><th>状态</th><th>姓名</th><th>学历</th><th>专业</th><th>推荐部门</th><th>匹配度</th></tr></thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+            <div class="detail-panel">
+                <h3>查看详情</h3>
+                <select id="detailSelect" class="input-select" aria-label="选择文件查看详情"><option value="">-- 选择文件查看详情 --</option></select>
+                <div id="detailContent"></div>
+            </div>
+            <div class="export-bar">
+                <a id="exportExcel" class="btn-secondary" aria-label="导出Excel汇总表">📥 导出 Excel</a>
+                <a id="exportCsv" class="btn-secondary" aria-label="导出CSV汇总表">📥 导出 CSV</a>
+            </div>
+        </div>
+
+        <div id="toast" class="toast hidden" role="alert" aria-live="assertive"></div>
+
+        <div id="recoverSection" class="recover-section" style="display:none">
+            <div class="recover-banner">
+                <div class="recover-icon">💾</div>
+                <div class="recover-body">检测到上次处理结果（<span id="recoverCount"></span> 项），可以恢复查看。</div>
+                <button id="recoverBtn" class="btn-primary" style="width:auto;padding:8px 24px;flex-shrink:0">恢复</button>
+            </div>
+        </div>
+    </main>
+    <script src="/static/app.js"></script>
+    <script>
+window.BATCH_SID = "";
+var STORAGE_KEY = "resume_batch_sid";
+
+(function() {
+    var saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+        try {
+            var info = JSON.parse(saved);
+            _('#recoverCount').textContent = info.count || '?';
+            _('#recoverSection').style.display = 'block';
+            _('#recoverBtn').addEventListener('click', function() {
+                restoreBatchResults(info.sid, info.count);
+                _('#recoverSection').style.display = 'none';
+            });
+        } catch(e) { localStorage.removeItem(STORAGE_KEY); }
+    }
+})();
+
+function restoreBatchResults(sid, count) {
+    window.BATCH_SID = sid;
+    _('#exportExcel').href = '/api/export/excel?sid=' + sid;
+    _('#exportCsv').href = '/api/export/csv?sid=' + sid;
+    _('#totalCount').textContent = count;
+    setHTMLSafe(_('#resultPermalink'),
+        '<a href="/summary?sid=' + sid + '" target="_blank">🔗 打开汇总页面</a>');
+    _('#batchResultSection').classList.remove('hidden');
+    _('#batchStatus').className = 'status success hidden';
+    loadBatchTable(sid);
+}
+
+async function loadBatchTable(sid) {
+    var tbody = _('#summaryTable tbody');
+    var select = _('#detailSelect');
+    tbody.textContent = '';
+    select.textContent = '';
+    select.insertAdjacentHTML('afterbegin', '<option value="">-- 选择文件查看详情 --</option>');
+    try {
+        var resp = await fetch('/api/detail/' + sid + '/0');
+        if (!resp.ok) throw new Error('无法加载');
+        for (var i = 0; ; i++) {
+            var r = await fetch('/api/detail/' + sid + '/' + i);
+            if (!r.ok) break;
+            var d = await r.json();
+            if (d.error && d.error === '索引越界') break;
+            if (d.user) {
+                var tr = document.createElement('tr');
+                var name = d.user.name || '-';
+                var degree = d.user.degree || '-';
+                var major = d.user.major || '-';
+                var topDept = d.recommendations && d.recommendations.length ? d.recommendations[0].department : '-';
+                var score = d.recommendations && d.recommendations.length ? Math.round(d.recommendations[0].score*100)+'%' : '-';
+                tr.innerHTML = '<td>' + esc(name) + '</td><td><span class="status-tag success">✅ 完成</span></td><td>' + esc(name) + '</td><td>' + esc(degree) + '</td><td>' + esc(major) + '</td><td>' + esc(topDept) + '</td><td>' + esc(score) + '</td>';
+                tbody.appendChild(tr);
+                var opt = document.createElement('option');
+                opt.value = i; opt.textContent = name;
+                select.appendChild(opt);
+            }
+        }
+    } catch(e) {}
+}
+
+setupDropZone('#dropZone', '#batchFileInput', '#batchFileList');
+var batchInput = _('#batchFileInput'), batchBtn = _('#batchBtn'), batchStatus = _('#batchStatus'), batchProgress = _('#batchProgress'), batchResult = _('#batchResultSection'), fileList = _('#batchFileList'), skeletonTableSection = _('#skeletonTableSection');
+
+batchInput.addEventListener('change', function() {
+    if (this.files.length) {
+        var names = '';
+        for (var i = 0; i < this.files.length; i++) names += '<div>' + esc(this.files[i].name) + '</div>';
+        setHTMLSafe(fileList, names); batchBtn.disabled = false;
+    } else { fileList.textContent = ''; batchBtn.disabled = true; }
+});
+
+batchBtn.addEventListener('click', async function() {
+    var files = batchInput.files;
+    if (!files.length) return;
+    batchBtn.disabled = true;
+    var btnLabel = batchBtn.querySelector('.btn-label');
+    var btnSpinner = batchBtn.querySelector('.spinner');
+    btnLabel.textContent = '处理中';
+    btnSpinner.style.display = 'inline-block';
+    batchStatus.className = 'status loading';
+    setHTMLSafe(batchStatus, '<span class="spinner"></span>正在处理 ' + files.length + ' 个文件');
+    batchStatus.classList.remove('hidden');
+    batchProgress.classList.remove('hidden');
+    batchProgress.value = 0;
+    batchResult.classList.add('hidden');
+
+    skeletonTableSection.classList.remove('hidden');
+    setHTMLSafe(skeletonTableSection, skeletonTable(Math.min(files.length, 6)));
+
+    var formData = new FormData();
+    for (var i = 0; i < files.length; i++) formData.append('files', files[i]);
+    try {
+        var resp = await fetch('/api/batch', { method: 'POST', body: formData });
+        var data = await resp.json();
+        skeletonTableSection.classList.add('hidden');
+        btnSpinner.style.display = 'none';
+        btnLabel.textContent = '🚀 开始批量处理';
+        batchProgress.value = 100;
+        if (data.sid) {
+            window.BATCH_SID = data.sid;
+            batchStatus.className = 'status success';
+            setHTMLSafe(batchStatus, '✅ 处理完成！共 ' + data.summary_rows.length + ' 个文件 — 已自动写入数据汇总表');
+            showToast('批量处理完成，共 ' + data.summary_rows.length + ' 条记录', 'success');
+
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({
+                sid: data.sid,
+                count: data.summary_rows.length,
+                ts: Date.now()
+            }));
+            setHTMLSafe(_('#resultPermalink'),
+                '<a href="/summary?sid=' + data.sid + '" target="_blank">🔗 打开汇总页面</a>');
+            var tbody = _('#summaryTable tbody');
+            tbody.textContent = '';
+            _('#totalCount').textContent = data.summary_rows.length;
+            var select = _('#detailSelect');
+            select.textContent = '';
+            select.insertAdjacentHTML('afterbegin', '<option value="">-- 选择文件查看详情 --</option>');
+            data.summary_rows.forEach(function(row, idx) {
+                var tr = document.createElement('tr');
+                var statusHtml = row.status === 'completed' ? '<span class="status-tag success">✅ 完成</span>' : '<span class="status-tag error">❌ 失败</span>';
+                tr.innerHTML = '<td>' + esc(row.file_name) + '</td><td>' + statusHtml + '</td><td>' + esc(row.name) + '</td><td>' + esc(row.degree) + '</td><td>' + esc(row.major) + '</td><td>' + esc(row.department) + '</td><td>' + esc(row.match_score) + '</td>';
+                tbody.appendChild(tr);
+                if (row.status === 'completed') {
+                    var opt = document.createElement('option');
+                    opt.value = idx; opt.textContent = row.file_name;
+                    select.appendChild(opt);
+                }
+            });
+            _('#exportExcel').href = '/api/export/excel?sid=' + data.sid;
+            _('#exportCsv').href = '/api/export/csv?sid=' + data.sid;
+            batchResult.classList.remove('hidden');
+            batchResult.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+    } catch (err) {
+        skeletonTableSection.classList.add('hidden');
+        btnSpinner.style.display = 'none';
+        btnLabel.textContent = '🚀 开始批量处理';
+        batchStatus.className = 'status error';
+        setHTMLSafe(batchStatus, '❌ 请求失败：' + esc(err.message));
+        showToast('批量处理失败，请重试', 'error');
+    }
+    batchBtn.disabled = false;
+});
+
+_('#detailSelect').addEventListener('change', async function() {
+    var idx = this.value;
+    var content = _('#detailContent');
+    if (idx === '') { content.textContent = ''; return; }
+    setHTMLSafe(content, '<div class="status loading"><span class="spinner"></span>加载中</div>');
+    try {
+        var resp = await fetch('/api/detail/' + window.BATCH_SID + '/' + idx);
+        var data = await resp.json();
+        if (data.error) { setHTMLSafe(content, '<div class="status error">❌ ' + esc(data.error) + '</div>'); return; }
+        setHTMLSafe(content, renderProfile(data.user) + '<div class="section-title" style="margin-top:20px">🏢 部门推荐</div>' + renderRecommendations(data.recommendations));
+        animateScoreBars(content);
+    } catch (err) { setHTMLSafe(content, '<div class="status error">❌ ' + esc(err.message) + '</div>'); }
+});
+
+_('#dropZone').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        batchInput.click();
+    }
+});
+    </script>
+</body>
+</html>
