@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>数据汇总 - 简历智能解析系统</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+</head>
+<body>
+    <div class="bg-decor" aria-hidden="true"></div>
+    <nav class="navbar" role="navigation" aria-label="主导航">
+        <div class="nav-brand">
+            <div class="brand-icon" aria-hidden="true">📄</div>
+            <span class="brand-text">简历智能解析系统</span>
+        </div>
+        <div class="nav-links">
+            <a href="/" class="{{ active_upload }}">🎯 简历解析</a>
+            <a href="/batch" class="{{ active_batch }}">📦 批量处理</a>
+            <a href="/summary" class="{{ active_summary }}" aria-current="page">📊 数据汇总</a>
+        </div>
+    </nav>
+    <main class="container" role="main">
+        <div class="page-header">
+            <div class="header-badge">📊 Master Summary</div>
+            <h1>数据汇总表</h1>
+            <p>所有简历数据统一存储入口 — 新增记录自动追加，已有记录自动更新</p>
+        </div>
+
+        <div id="statsBar" class="animate-stagger" style="margin-bottom:28px">
+            <div class="stats-grid">
+                <div class="stat-card total">
+                    <div class="stat-icon">📋</div>
+                    <div class="stat-body">
+                        <div class="stat-num" id="statTotal">-</div>
+                        <div class="stat-label">总记录数</div>
+                    </div>
+                </div>
+                <div class="stat-card new">
+                    <div class="stat-icon">✅</div>
+                    <div class="stat-body">
+                        <div class="stat-num" id="statInterviewed">-</div>
+                        <div class="stat-label">已面试</div>
+                    </div>
+                </div>
+                <div class="stat-card updated">
+                    <div class="stat-icon">⏳</div>
+                    <div class="stat-body">
+                        <div class="stat-num" id="statNotInterviewed">-</div>
+                        <div class="stat-label">未面试</div>
+                    </div>
+                </div>
+                <div class="stat-card depts">
+                    <div class="stat-icon">🏢</div>
+                    <div class="stat-body">
+                        <div class="stat-num" id="statDepts">-</div>
+                        <div class="stat-label">覆盖部门</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="hidden" id="emptySection">
+            <div class="empty-state">
+                <div class="empty-illustration" aria-hidden="true">📭</div>
+                <h3>汇总表暂无数据</h3>
+                <p>每次批量处理完成后，数据会自动写入此汇总表</p>
+                <p class="hint">前往批量处理页面开始导入简历</p>
+                <a href="/batch" class="btn-primary" style="width:auto;padding:12px 32px;display:inline-flex">📦 前往批量处理</a>
+            </div>
+        </div>
+
+        <div class="hidden" id="tableSection">
+            <div class="filter-bar">
+                <div class="filter-group">
+                    <label for="filterStatus" class="filter-label">🔍 按面试状态筛选：</label>
+                    <select id="filterStatus" class="filter-select" aria-label="按面试状态筛选">
+                        <option value="">全部记录</option>
+                        <option value="已面试">✅ 已面试</option>
+                        <option value="未面试">⏳ 未面试</option>
+                    </select>
+                    <span id="filterCount" class="filter-count"></span>
+                </div>
+                <div class="filter-actions">
+                    <button id="refreshBtn" class="btn-ghost" aria-label="刷新数据">🔄 刷新</button>
+                </div>
+            </div>
+            <div class="result-header-bar">
+                <h2>📊 简历数据汇总表（共 <span id="recordCount">0</span> 条记录）</h2>
+            </div>
+            <div class="table-wrapper" id="tableWrapper">{{ table_html }}</div>
+            <div class="export-bar" id="exportBar">
+                <a id="exportExcel" class="btn-secondary" aria-label="导出全部Excel">📥 导出全部 Excel</a>
+                <a id="exportCsv" class="btn-secondary" aria-label="导出全部CSV">📥 导出全部 CSV</a>
+                <a id="exportInterviewedExcel" class="btn-secondary" aria-label="导出已面试Excel" style="display:none">✅ 导出已面试 Excel</a>
+                <a id="exportNotInterviewedExcel" class="btn-secondary" aria-label="导出未面试Excel" style="display:none">⏳ 导出未面试 Excel</a>
+            </div>
+        </div>
+
+        <div id="detailModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+            <div class="modal-box">
+                <div class="modal-header">
+                    <h3 id="modalTitle">简历详情</h3>
+                    <button id="modalClose" class="modal-close" aria-label="关闭详情">✕</button>
+                </div>
+                <div id="modalBody" class="modal-body"></div>
+            </div>
+        </div>
+
+        <div id="editModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="editModalTitle">
+            <div class="modal-box">
+                <div class="modal-header">
+                    <h3 id="editModalTitle">编辑简历信息</h3>
+                    <button id="editModalClose" class="modal-close" aria-label="关闭编辑">✕</button>
+                </div>
+                <div id="editModalBody" class="modal-body"></div>
+            </div>
+        </div>
+
+        <div id="toast" class="toast hidden" role="alert" aria-live="assertive"></div>
+    </main>
+    <script src="/static/app.js"></script>
+    <script>
+var statsBar = _('#statsBar'), emptySection = _('#emptySection'), tableSection = _('#tableSection');
+var currentFilter = '';
+
+function setBtnLoading(btn, loading) {
+    if (loading) {
+        btn.classList.add('btn-table-loading');
+        btn.disabled = true;
+    } else {
+        btn.classList.remove('btn-table-loading');
+        btn.disabled = false;
+    }
+}
+
+function flashBtnSuccess(btn) {
+    btn.classList.remove('btn-table-loading');
+    btn.disabled = false;
+    btn.classList.add('btn-table-success');
+    setTimeout(function() { btn.classList.remove('btn-table-success'); }, 2000);
+}
+
+function flashBtnError(btn) {
+    btn.classList.remove('btn-table-loading');
+    btn.disabled = false;
+    btn.classList.add('btn-table-error');
+    btn.addEventListener('animationend', function() { btn.classList.remove('btn-table-error'); }, { once: true });
+}
+
+function animateStats() {
+    statsBar.classList.add('visible');
+    var nums = statsBar.querySelectorAll('.stat-num');
+    nums.forEach(function(el) {
+        var target = parseInt(el.textContent) || 0;
+        if (target === 0) return;
+        var start = 0;
+        var duration = 1000;
+        var startTime = null;
+        function step(ts) {
+            if (!startTime) startTime = ts;
+            var progress = Math.min((ts - startTime) / duration, 1);
+            var eased = 1 - Math.pow(1 - progress, 3);
+            el.textContent = Math.floor(start + (target - start) * eased);
+            if (progress < 1) requestAnimationFrame(step);
+            else el.textContent = target;
+        }
+        requestAnimationFrame(step);
+    });
+}
+
+function updateExportLinks(status) {
+    var exportExcel = _('#exportExcel'), exportCsv = _('#exportCsv');
+    var exportIntExcel = _('#exportInterviewedExcel'), exportNotIntExcel = _('#exportNotInterviewedExcel');
+    exportIntExcel.style.display = 'none';
+    exportNotIntExcel.style.display = 'none';
+    if (!status) {
+        exportExcel.href = '/api/export/master/excel';
+        exportExcel.textContent = '📥 导出全部 Excel';
+        exportExcel.style.display = '';
+        exportCsv.href = '/api/export/master/csv';
+        exportCsv.textContent = '📥 导出全部 CSV';
+        exportCsv.style.display = '';
+    } else {
+        exportExcel.href = '/api/export/master/excel?status=' + encodeURIComponent(status);
+        exportExcel.textContent = '📥 导出' + status + ' Excel';
+        exportExcel.style.display = '';
+        exportCsv.href = '/api/export/master/csv?status=' + encodeURIComponent(status);
+        exportCsv.textContent = '📥 导出' + status + ' CSV';
+        exportCsv.style.display = '';
+    }
+}
+
+function showToast(msg, type) { window.showToast(msg, type); }
+
+async function refreshTable(status) {
+    status = status || currentFilter;
+    try {
+        var url = '/api/master/filter';
+        if (status) url += '?status=' + encodeURIComponent(status);
+        var resp = await fetch(url);
+        var data = await resp.json();
+        var tbody = _('#tableWrapper tbody');
+        if (data.rows.length === 0) {
+            tableSection.classList.add('hidden');
+            emptySection.classList.remove('hidden');
+            _('#statTotal').textContent = '0';
+            _('#statInterviewed').textContent = '0';
+            _('#statNotInterviewed').textContent = '0';
+            _('#statDepts').textContent = '0';
+            _('#filterCount').textContent = '';
+            updateExportLinks('');
+            return;
+        }
+        emptySection.classList.add('hidden');
+        tableSection.classList.remove('hidden');
+        var html = '';
+        data.rows.forEach(function(r, i) {
+            var score = r.match_score ? Math.round(r.match_score * 100) + '%' : '-';
+            var timeStr = (r.import_time || '-').substring(0, 16);
+            var itvTime = r.interview_time || '-';
+            if (itvTime !== '-' && itvTime.length >= 16) itvTime = itvTime.substring(0, 16);
+            var st = r.interview_status || '未面试';
+            var stClass = st === '已面试' ? 'status-tag success' : 'status-tag error';
+            html += '<tr><td>' + (i + 1) + '</td><td>' + esc(r.name || '-') + '</td><td>' + esc(r.degree || '-') + '</td><td>' + esc(r.major || '-') + '</td><td>' + esc(r.school || '-') + '</td><td>' + esc(r.top_department || '-') + '</td><td>' + score + '</td><td><span class="' + stClass + '">' + st + '</span></td><td>' + itvTime + '</td><td>' + timeStr + '</td><td class="actions-cell"><button class="btn-table btn-view" data-id="' + r.id + '"><span class="btn-spinner"></span><span class="btn-label">查看</span></button><button class="btn-table btn-edit" data-id="' + r.id + '"><span class="btn-spinner"></span><span class="btn-label">编辑</span></button><button class="btn-table btn-delete" data-id="' + r.id + '"><span class="btn-spinner"></span><span class="btn-label">删除</span></button></td></tr>';
+        });
+        setHTMLSafe(tbody, html);
+        _('#recordCount').textContent = data.total;
+        _('#filterCount').textContent = status ? '（筛选结果：' + data.total + ' 条）' : '';
+        updateExportLinks(status);
+    } catch(e) { showToast('刷新失败: ' + e.message, 'error'); }
+}
+
+(async function initStats() {
+    try {
+        var resp = await fetch('/api/master/stats');
+        var stats = await resp.json();
+        if (stats.total > 0) {
+            _('#statTotal').textContent = stats.total;
+            _('#statInterviewed').textContent = stats.interviewed || 0;
+            _('#statNotInterviewed').textContent = stats.not_interviewed || 0;
+            _('#statDepts').textContent = stats.by_department ? stats.by_department.length : '0';
+            _('#recordCount').textContent = stats.total;
+            statsBar.style.display = 'block';
+            tableSection.classList.remove('hidden');
+            emptySection.classList.add('hidden');
+            setupAnimateStagger();
+            animateStats();
+            updateExportLinks('');
+        } else {
+            statsBar.style.display = 'block';
+            emptySection.classList.remove('hidden');
+            tableSection.classList.add('hidden');
+            setupAnimateStagger();
+            var cards = statsBar.querySelectorAll('.stat-card');
+            cards.forEach(function(c) { c.querySelector('.stat-num').textContent = '0'; });
+            statsBar.classList.add('visible');
+            updateExportLinks('');
+        }
+    } catch(e) {
+        emptySection.classList.remove('hidden');
+        tableSection.classList.add('hidden');
+    }
+})();
+
+_('#filterStatus').addEventListener('change', function() {
+    currentFilter = this.value;
+    refreshTable(currentFilter);
+});
+
+_('#refreshBtn').addEventListener('click', function() { location.reload(); });
+
+document.addEventListener('click', async function(e) {
+    var btn = e.target.closest('.btn-table');
+    if (!btn) {
+        if (e.target.id === 'modalClose' || e.target.id === 'detailModal') {
+            var dm = _('#detailModal');
+            dm.classList.add('hidden');
+            dm.classList.remove('exit');
+            document.body.classList.remove('modal-open');
+        }
+        if (e.target.id === 'editModalClose' || e.target.id === 'editModal') {
+            var em = _('#editModal');
+            em.classList.add('hidden');
+            em.classList.remove('exit');
+            document.body.classList.remove('modal-open');
+        }
+        return;
+    }
+
+    var id = parseInt(btn.dataset.id);
+    if (!id) return;
+
+    /* ----- VIEW ----- */
+    if (btn.classList.contains('btn-view')) {
+        setBtnLoading(btn, true);
+        var modal = _('#detailModal');
+        var body = _('#modalBody');
+        _('#modalTitle').textContent = '简历详情 #' + id;
+        setHTMLSafe(body, '<div class="status loading"><span class="spinner"></span>加载中</div>');
+        modal.classList.remove('hidden');
+        document.body.classList.add('modal-open');
+        try {
+            var resp = await fetch('/api/master/detail/' + id);
+            var data = await resp.json();
+            if (data.error) {
+                setHTMLSafe(body, '<div class="error-state"><div class="error-icon">⚠️</div><p>' + esc(data.error) + '</p></div>');
+                flashBtnError(btn);
+                return;
+            }
+            var html = '<div class="profile-grid animate-stagger visible">';
+            var u = data.user;
+            var pairs = [
+                ['姓名', u.name], ['性别', u.gender], ['年龄', u.age], ['最高学历', u.degree],
+                ['手机', u.phone], ['邮箱', u.email], ['专业', u.major], ['毕业院校', u.school]
+            ];
+            pairs.forEach(function(p) { html += '<div class="profile-card"><div class="label">' + p[0] + '</div><div class="value">' + esc(p[1] || '-') + '</div></div>'; });
+            html += '</div>';
+            if (u.skills) {
+                html += '<div class="section-title">专业技能</div><div>';
+                u.skills.split('、').forEach(function(s) { html += '<span class="skill-tag">' + esc(s) + '</span>'; });
+                html += '</div>';
+            }
+            if (u.work_history) { html += '<div class="section-title">工作经历</div><div class="desc-text">' + esc(u.work_history) + '</div>'; }
+            if (u.project_history) { html += '<div class="section-title">项目经历</div><div class="desc-text">' + esc(u.project_history) + '</div>'; }
+            if (data.recommendations && data.recommendations.length) {
+                html += '<div class="section-title">部门推荐</div>' + renderRecommendations(data.recommendations);
+            }
+            setHTMLSafe(body, html);
+            flashBtnSuccess(btn);
+            setTimeout(function() { animateScoreBars(body); }, 50);
+        } catch(err) {
+            setHTMLSafe(body, '<div class="error-state"><div class="error-icon">⚠️</div><p>' + esc(err.message) + '</p></div>');
+            flashBtnError(btn);
+            showToast('加载失败: ' + err.message, 'error');
+        }
+    }
+
+    /* ----- EDIT ----- */
+    if (btn.classList.contains('btn-edit')) {
+        setBtnLoading(btn, true);
+        var row = btn.closest('tr');
+        if (!row) { flashBtnError(btn); return; }
+        var cells = row.querySelectorAll('td');
+        var name = cells[1].textContent.trim();
+        var degree = cells[2].textContent.trim();
+        var major = cells[3].textContent.trim();
+        var school = cells[4].textContent.trim();
+        var modalE = _('#editModal');
+        var bodyE = _('#editModalBody');
+        _('#editModalTitle').textContent = '编辑简历 #' + id;
+        var fields = [
+            {key:'name', label:'姓名', val:name},
+            {key:'degree', label:'学历', val:degree},
+            {key:'major', label:'专业', val:major},
+            {key:'school', label:'毕业院校', val:school},
+        ];
+        var formHtml = '<div class="edit-form">';
+        fields.forEach(function(f) {
+            formHtml += '<div class="edit-field"><label>' + f.label + '</label><input type="text" class="edit-input" data-field="' + f.key + '" value="' + esc(f.val === '-' ? '' : f.val) + '"></div>';
+        });
+        formHtml += '<div class="edit-field"><label>面试状态</label><div class="status-toggle-group"><label class="status-radio"><input type="radio" name="editStatus" value="已面试"> ✅ 已面试</label><label class="status-radio"><input type="radio" name="editStatus" value="未面试"> ⏳ 未面试</label></div></div>';
+        formHtml += '<button class="btn-primary w-full" id="saveEditBtn">💾 保存修改</button>';
+        formHtml += '<div id="editStatus" class="status hidden mt-2"></div>';
+        formHtml += '</div>';
+        setHTMLSafe(bodyE, formHtml);
+        modalE.classList.remove('hidden');
+        document.body.classList.add('modal-open');
+        flashBtnSuccess(btn);
+
+        _('#saveEditBtn').addEventListener('click', async function() {
+            var saveBtn = this;
+            saveBtn.disabled = true;
+            setHTMLSafe(saveBtn, '<span class="spinner"></span>保存中');
+            var inputs = bodyE.querySelectorAll('.edit-input');
+            var payload = {};
+            inputs.forEach(function(inp) {
+                payload[inp.dataset.field] = inp.value.trim();
+            });
+            var statusRadio = bodyE.querySelector('input[name="editStatus"]:checked');
+            if (statusRadio) {
+                payload.interview_status = statusRadio.value;
+            }
+            var controller = new AbortController();
+            var timeoutId = setTimeout(function() { controller.abort(); }, 8000);
+            try {
+                var resp = await fetch('/api/master/' + id + '/update', {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                    signal: controller.signal,
+                });
+                clearTimeout(timeoutId);
+                var result = await resp.json();
+                if (result.success) {
+                    showToast('修改已保存', 'success');
+                    var em2 = _('#editModal');
+                    em2.classList.add('hidden');
+                    em2.classList.remove('exit');
+                    document.body.classList.remove('modal-open');
+                    refreshTable(currentFilter);
+                    fetch('/api/master/stats').then(function(r){ return r.json(); }).then(function(s){
+                        _('#statTotal').textContent = s.total;
+                        _('#statInterviewed').textContent = s.interviewed || 0;
+                        _('#statNotInterviewed').textContent = s.not_interviewed || 0;
+                        _('#statDepts').textContent = s.by_department ? s.by_department.length : '0';
+                    });
+                } else {
+                    showToast(result.message || '修改失败', 'error');
+                    saveBtn.disabled = false;
+                    setHTMLSafe(saveBtn, '💾 保存修改');
+                }
+            } catch(err) {
+                clearTimeout(timeoutId);
+                if (err.name === 'AbortError') {
+                    showToast('请求超时，请检查网络后重试', 'error');
+                } else {
+                    showToast('保存失败: ' + err.message, 'error');
+                }
+                saveBtn.disabled = false;
+                setHTMLSafe(saveBtn, '💾 保存修改');
+            }
+        });
+    }
+
+    /* ----- DELETE ----- */
+    if (btn.classList.contains('btn-delete')) {
+        if (!confirm('确定要删除记录 #' + id + ' 吗？此操作不可撤销。')) return;
+        setBtnLoading(btn, true);
+        try {
+            var resp = await fetch('/api/master/' + id, { method: 'DELETE' });
+            var data = await resp.json();
+            if (data.success) {
+                showToast(data.message, 'success');
+                await refreshTable(currentFilter);
+                fetch('/api/master/stats').then(function(r){ return r.json(); }).then(function(s){
+                    _('#statTotal').textContent = s.total;
+                    _('#statInterviewed').textContent = s.interviewed || 0;
+                    _('#statNotInterviewed').textContent = s.not_interviewed || 0;
+                    _('#statDepts').textContent = s.by_department ? s.by_department.length : '0';
+                });
+            } else {
+                showToast(data.message, 'error');
+                flashBtnError(btn);
+            }
+        } catch(err) {
+            showToast('删除失败: ' + err.message, 'error');
+            flashBtnError(btn);
+        }
+    }
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        var dm = _('#detailModal'), em = _('#editModal');
+        if (dm && !dm.classList.contains('hidden')) { dm.classList.add('hidden'); dm.classList.remove('exit'); document.body.classList.remove('modal-open'); }
+        if (em && !em.classList.contains('hidden')) { em.classList.add('hidden'); em.classList.remove('exit'); document.body.classList.remove('modal-open'); }
+    }
+});
+    </script>
+</body>
+</html>

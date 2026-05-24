@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>简历解析 - 简历智能解析系统</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+</head>
+<body>
+    <div class="bg-decor" aria-hidden="true"></div>
+    <nav class="navbar" role="navigation" aria-label="主导航">
+        <div class="nav-brand">
+            <div class="brand-icon" aria-hidden="true">📄</div>
+            <span class="brand-text">简历智能解析系统</span>
+        </div>
+        <div class="nav-links">
+            <a href="/" class="{{ active_upload }}" aria-current="page">🎯 简历解析</a>
+            <a href="/batch" class="{{ active_batch }}">📦 批量处理</a>
+            <a href="/summary" class="{{ active_summary }}">📊 数据汇总</a>
+        </div>
+    </nav>
+    <main class="container" role="main">
+        <div class="page-header">
+            <div class="header-badge">🤖 AI-Powered Resume Parser</div>
+            <h1>简历智能解析</h1>
+            <p>上传简历文件，AI 自动提取关键信息并生成用户画像与部门推荐</p>
+        </div>
+
+        <div class="upload-section">
+            <div class="upload-zone" id="dropZone" role="button" tabindex="0" aria-label="点击或拖拽上传简历文件">
+                <input type="file" id="fileInput" accept=".pdf,.txt,.docx,.doc,.jpg,.jpeg,.png,.bmp,.tiff,.tif" hidden aria-hidden="true">
+                <div class="zone-inner">
+                    <div class="upload-icon-circle">
+                        <span class="upload-icon-emoji" aria-hidden="true">📤</span>
+                    </div>
+                    <p class="upload-text">拖拽文件到此处，或点击选择文件</p>
+                    <p class="upload-hint">支持 PDF、DOCX、TXT、JPG、PNG 等格式</p>
+                    <div class="upload-formats">
+                        <span class="format-tag">PDF</span>
+                        <span class="format-tag">DOCX</span>
+                        <span class="format-tag">TXT</span>
+                        <span class="format-tag">JPG</span>
+                        <span class="format-tag">PNG</span>
+                    </div>
+                    <div id="fileName" class="file-name" style="display:none"></div>
+                </div>
+            </div>
+            <button id="parseBtn" class="btn-primary w-full" disabled aria-label="开始解析简历">
+                <span class="btn-label">🚀 开始解析</span>
+                <span class="spinner" style="display:none" aria-hidden="true"></span>
+            </button>
+            <div id="parseStatus" class="status hidden" role="status" aria-live="polite"></div>
+        </div>
+
+        <div id="skeletonSection" class="hidden">
+            <div class="skeleton skeleton-heading"></div>
+            <div id="skeletonContent"></div>
+        </div>
+
+        <div id="resultSection" class="hidden result-enter">
+            <div class="tabs" role="tablist" aria-label="结果视图切换">
+                <button class="tab active" data-tab="profile" role="tab" aria-selected="true" aria-controls="tabProfile">📋 用户画像</button>
+                <button class="tab" data-tab="recommend" role="tab" aria-selected="false" aria-controls="tabRecommend">🏢 部门推荐</button>
+            </div>
+            <div id="tabProfile" class="tab-content active" role="tabpanel" aria-labelledby="tabProfile">
+                <div id="userProfile"></div>
+            </div>
+            <div id="tabRecommend" class="tab-content" role="tabpanel" aria-labelledby="tabRecommend">
+                <div id="recommendList"></div>
+            </div>
+        </div>
+
+        <section class="calendar-section mt-6" id="calendarSection">
+            <div class="page-header" style="margin-bottom:20px">
+                <h2 style="font-size:var(--text-2xl)">📅 面试时间追踪</h2>
+                <p>可视化追踪候选人面试安排 — 点击日期添加面试时间</p>
+            </div>
+            <div class="card-raised" style="padding:var(--space-6)">
+                <div class="calendar-toolbar">
+                    <div class="calendar-nav">
+                        <button id="calPrev" class="cal-nav-btn" aria-label="上一页">◀</button>
+                        <h3 id="calTitle" class="cal-title"></h3>
+                        <button id="calNext" class="cal-nav-btn" aria-label="下一页">▶</button>
+                        <button id="calToday" class="btn-ghost cal-today-btn">今天</button>
+                    </div>
+                    <div class="cal-view-switch">
+                        <button class="cal-view-btn active" data-view="month">月</button>
+                        <button class="cal-view-btn" data-view="week">周</button>
+                        <button class="cal-view-btn" data-view="day">日</button>
+                    </div>
+                </div>
+                <div id="calendarGrid" class="calendar-grid"></div>
+                <div class="cal-legend">
+                    <span class="cal-legend-item"><span class="cal-dot has-event"></span> 已安排面试</span>
+                    <span class="cal-legend-item"><span class="cal-dot today"></span> 今天</span>
+                </div>
+            </div>
+        </section>
+
+        <div id="interviewModal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="ivModalTitle">
+            <div class="modal-box" style="max-width:500px">
+                <div class="modal-header">
+                    <h3 id="ivModalTitle">设置面试时间</h3>
+                    <button id="ivModalClose" class="modal-close" aria-label="关闭">✕</button>
+                </div>
+                <div id="ivModalBody" class="modal-body"></div>
+            </div>
+        </div>
+
+        <div id="toast" class="toast hidden" role="alert" aria-live="assertive"></div>
+    </main>
+    <script src="/static/app.js"></script>
+    <script>
+setupDropZone('#dropZone', '#fileInput', null);
+var fi = _('#fileInput'), btn = _('#parseBtn'), statusEl = _('#parseStatus'), resultSection = _('#resultSection'), fnEl = _('#fileName'), skeletonSection = _('#skeletonSection'), skeletonContent = _('#skeletonContent');
+
+fi.addEventListener('change', function() {
+    if (this.files.length) { fnEl.textContent = this.files[0].name; fnEl.style.display = 'inline-block'; btn.disabled = false; }
+    else { fnEl.style.display = 'none'; btn.disabled = true; }
+});
+
+btn.addEventListener('click', async function() {
+    var file = fi.files[0];
+    if (!file) return;
+    btn.disabled = true;
+    var btnLabel = btn.querySelector('.btn-label');
+    var btnSpinner = btn.querySelector('.spinner');
+    btnLabel.textContent = '解析中';
+    btnSpinner.style.display = 'inline-block';
+    statusEl.className = 'status loading';
+    setHTMLSafe(statusEl, '<span class="spinner"></span>正在解析简历，请稍候');
+    statusEl.classList.remove('hidden');
+    resultSection.classList.add('hidden');
+
+    skeletonSection.classList.remove('hidden');
+    setHTMLSafe(skeletonContent, skeletonProfile());
+
+    var formData = new FormData();
+    formData.append('file', file);
+    try {
+        var resp = await fetch('/api/parse', { method: 'POST', body: formData });
+        var data = await resp.json();
+        skeletonSection.classList.add('hidden');
+        btnSpinner.style.display = 'none';
+        btnLabel.textContent = '🚀 开始解析';
+        if (data.error) {
+            statusEl.className = 'status error';
+            setHTMLSafe(statusEl, '❌ ' + esc(data.error));
+            showToast('解析失败：' + data.error, 'error');
+        } else {
+            statusEl.classList.add('hidden');
+            setHTMLSafe(_('#userProfile'), renderProfile(data.user));
+            setHTMLSafe(_('#recommendList'), renderRecommendations(data.recommendations));
+            resultSection.classList.remove('hidden');
+            resultSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setTimeout(function() { animateScoreBars(resultSection); }, 100);
+        }
+    } catch (err) {
+        skeletonSection.classList.add('hidden');
+        btnSpinner.style.display = 'none';
+        btnLabel.textContent = '🚀 开始解析';
+        statusEl.className = 'status error';
+        setHTMLSafe(statusEl, '❌ 请求失败：' + esc(err.message));
+        showToast('网络请求失败，请重试', 'error');
+    }
+    btn.disabled = false;
+});
+
+_('#dropZone').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        fi.click();
+    }
+});
+
+/* ========== CALENDAR SYSTEM ========== */
+var calState = { view: 'month', date: new Date(), events: {} };
+var calGrid = _('#calendarGrid'), calTitle = _('#calTitle');
+var calPrev = _('#calPrev'), calNext = _('#calNext'), calToday = _('#calToday');
+var ivModal = _('#interviewModal'), ivBody = _('#ivModalBody'), ivTitle = _('#ivModalTitle');
+
+function formatDateKey(y, m, d) { return y + '-' + String(m + 1).padStart(2, '0') + '-' + String(d).padStart(2, '0'); }
+
+async function loadEvents() {
+    try {
+        var resp = await fetch('/api/interview/schedule');
+        var data = await resp.json();
+        calState.events = {};
+        (data.events || []).forEach(function(ev) {
+            var t = ev.interview_time;
+            if (t && t.length >= 10) {
+                var key = t.substring(0, 10);
+                if (!calState.events[key]) calState.events[key] = [];
+                calState.events[key].push({ id: ev.id, name: ev.name, time: t, status: ev.interview_status, dept: ev.top_department });
+            }
+        });
+    } catch(e) { console.error('加载面试事件失败:', e); }
+}
+
+function renderCalendar() {
+    if (calState.view === 'month') renderMonthView();
+    else if (calState.view === 'week') renderWeekView();
+    else renderDayView();
+}
+
+function setCalTitle(text) { calTitle.textContent = text; }
+
+function renderMonthView() {
+    var y = calState.date.getFullYear(), m = calState.date.getMonth();
+    setCalTitle(y + '年 ' + (m + 1) + '月');
+    var firstDay = new Date(y, m, 1).getDay();
+    firstDay = firstDay === 0 ? 6 : firstDay - 1;
+    var daysInMonth = new Date(y, m + 1, 0).getDate();
+    var today = new Date(), todayKey = formatDateKey(today.getFullYear(), today.getMonth(), today.getDate());
+
+    var html = '<div class="cal-month-header"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span class="cal-weekend">六</span><span class="cal-weekend">日</span></div><div class="cal-month-grid">';
+    for (var i = 0; i < firstDay; i++) html += '<div class="cal-cell cal-cell-empty"></div>';
+
+    for (var d = 1; d <= daysInMonth; d++) {
+        var key = formatDateKey(y, m, d);
+        var cls = 'cal-cell';
+        if (key === todayKey) cls += ' cal-today';
+        var isWeekend = (firstDay + d - 1) % 7 >= 5;
+        if (isWeekend) cls += ' cal-weekend';
+
+        var events = calState.events[key] || [];
+        var evHtml = '';
+        events.forEach(function(ev) {
+            var timeLabel = ev.time.length >= 16 ? ev.time.substring(11, 16) : '';
+            evHtml += '<div class="cal-event" data-id="' + ev.id + '" data-date="' + key + '" data-time="' + ev.time + '" title="' + esc(ev.name) + (timeLabel ? ' ' + timeLabel : '') + '"><span class="cal-event-dot"></span><span class="cal-event-name">' + esc(ev.name) + '</span><span class="cal-event-time">' + timeLabel + '</span></div>';
+        });
+
+        html += '<div class="' + cls + '" data-date="' + key + '"><span class="cal-day-num">' + d + '</span>' + evHtml + '<button class="cal-add-btn" data-date="' + key + '" title="添加面试" aria-label="为 ' + y + '/' + (m+1) + '/' + d + ' 添加面试">+</button></div>';
+    }
+    html += '</div>';
+    setHTMLSafe(calGrid, html);
+}
+
+function renderWeekView() {
+    var d = calState.date, day = d.getDay();
+    var monday = new Date(d);
+    monday.setDate(d.getDate() - (day === 0 ? 6 : day - 1));
+    var y = monday.getFullYear(), mo = monday.getMonth(), start = monday.getDate();
+
+    var endDate = new Date(monday);
+    endDate.setDate(start + 6);
+    setCalTitle(y + '年 ' + (mo + 1) + '月 ' + start + '日 - ' + endDate.getDate() + '日');
+
+    var today = new Date(), todayKey = formatDateKey(today.getFullYear(), today.getMonth(), today.getDate());
+    var dayNames = ['一', '二', '三', '四', '五', '六', '日'];
+
+    var html = '<div class="cal-week-grid">';
+    for (var i = 0; i < 7; i++) {
+        var cellDate = new Date(monday);
+        cellDate.setDate(start + i);
+        var cy = cellDate.getFullYear(), cm = cellDate.getMonth(), cd = cellDate.getDate();
+        var key = formatDateKey(cy, cm, cd);
+        var cls = 'cal-week-cell';
+        if (key === todayKey) cls += ' cal-today';
+        if (i >= 5) cls += ' cal-weekend';
+
+        var events = calState.events[key] || [];
+        var evHtml = '';
+        events.forEach(function(ev) {
+            var timeLabel = ev.time.length >= 16 ? ev.time.substring(11, 16) : '';
+            evHtml += '<div class="cal-event" data-id="' + ev.id + '" data-date="' + key + '" data-time="' + ev.time + '" title="' + esc(ev.name) + '"><span class="cal-event-dot"></span><span class="cal-event-name">' + esc(ev.name) + '</span><span class="cal-event-time">' + timeLabel + '</span></div>';
+        });
+
+        html += '<div class="' + cls + '" data-date="' + key + '"><div class="cal-week-header">' + dayNames[i] + ' <span class="cal-day-num">' + cd + '</span></div>' + evHtml + '<button class="cal-add-btn" data-date="' + key + '" title="添加面试">+</button></div>';
+    }
+    html += '</div>';
+    setHTMLSafe(calGrid, html);
+}
+
+function renderDayView() {
+    var d = calState.date, y = d.getFullYear(), m = d.getMonth(), day = d.getDate();
+    setCalTitle(y + '年 ' + (m + 1) + '月 ' + day + '日');
+    var key = formatDateKey(y, m, day);
+    var today = new Date(), todayKey = formatDateKey(today.getFullYear(), today.getMonth(), today.getDate());
+    var cls = 'cal-day-view';
+    if (key === todayKey) cls += ' cal-today';
+
+    var events = calState.events[key] || [];
+    var evHtml = '';
+    if (events.length === 0) {
+        evHtml = '<p class="text-muted text-center mt-4">当天暂无面试安排</p>';
+    } else {
+        events.sort(function(a, b) { return (a.time || '').localeCompare(b.time || ''); });
+        events.forEach(function(ev) {
+            var timeLabel = ev.time.length >= 16 ? ev.time.substring(11, 16) : '--:--';
+            evHtml += '<div class="cal-day-event" data-id="' + ev.id + '" data-date="' + key + '" data-time="' + ev.time + '"><span class="cal-day-time">' + timeLabel + '</span><div class="cal-day-info"><strong>' + esc(ev.name) + '</strong><span style="font-size:11px;color:var(--text-muted)">' + esc(ev.dept || '') + '</span></div><span class="cal-day-status">' + (ev.status === '已面试' ? '✅' : '⏳') + '</span></div>';
+        });
+    }
+
+    setHTMLSafe(calGrid, '<div class="' + cls + '">' + evHtml + '<button class="btn-secondary" style="margin-top:12px;width:100%" data-date="' + key + '" id="calDayAddBtn">+ 添加面试</button></div>');
+}
+
+function navigateCal(dir) {
+    if (calState.view === 'month') calState.date.setMonth(calState.date.getMonth() + dir);
+    else if (calState.view === 'week') calState.date.setDate(calState.date.getDate() + dir * 7);
+    else calState.date.setDate(calState.date.getDate() + dir);
+    renderCalendar();
+}
+
+calPrev.addEventListener('click', function() { navigateCal(-1); });
+calNext.addEventListener('click', function() { navigateCal(1); });
+calToday.addEventListener('click', function() {
+    calState.date = new Date();
+    renderCalendar();
+});
+
+document.querySelectorAll('.cal-view-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.cal-view-btn').forEach(function(b) { b.classList.remove('active'); });
+        this.classList.add('active');
+        calState.view = this.dataset.view;
+        renderCalendar();
+    });
+});
+
+calGrid.addEventListener('click', async function(e) {
+    var addBtn = e.target.closest('.cal-add-btn, #calDayAddBtn');
+    if (addBtn) {
+        e.stopPropagation();
+        openInterviewModal(addBtn.dataset.date);
+        return;
+    }
+    var evEl = e.target.closest('.cal-event, .cal-day-event');
+    if (evEl) {
+        e.stopPropagation();
+        openInterviewModal(evEl.dataset.date, parseInt(evEl.dataset.id), evEl.dataset.time);
+        return;
+    }
+});
+
+async function openInterviewModal(dateKey, recordId, currentTime) {
+    ivTitle.textContent = recordId ? '编辑面试时间' : '添加面试时间 — ' + dateKey;
+    var html = '<div class="edit-form">';
+    html += '<div class="edit-field"><label>面试日期</label><input type="date" class="edit-input" id="ivDate" value="' + dateKey + '"></div>';
+    html += '<div class="edit-field"><label>面试时间</label><input type="time" class="edit-input" id="ivTime" value="' + (currentTime && currentTime.length >= 16 ? currentTime.substring(11, 16) : '09:00') + '"></div>';
+
+    if (!recordId) {
+        html += '<div class="edit-field"><label>选择候选人</label><select id="ivCandidate" class="input-select"><option value="">-- 加载中 --</option></select></div>';
+    }
+
+    html += '<div id="ivStatus" class="status hidden mt-2"></div>';
+    html += '<div style="display:flex;gap:8px;margin-top:12px">';
+    html += '<button class="btn-primary" id="ivSaveBtn" style="flex:1">💾 保存</button>';
+    if (recordId) {
+        html += '<button class="btn-secondary btn-ghost btn-danger" id="ivClearBtn">🗑 清除时间</button>';
+    }
+    html += '</div></div>';
+    setHTMLSafe(ivBody, html);
+    ivModal.classList.remove('hidden');
+    document.body.classList.add('modal-open');
+
+    if (!recordId) {
+        try {
+            var resp = await fetch('/api/master');
+            var data = await resp.json();
+            var sel = _('#ivCandidate');
+            var opts = '<option value="">-- 请选择 --</option>';
+            (data.rows || []).forEach(function(r) {
+                opts += '<option value="' + r.id + '">' + esc(r.name || '无名称') + ' (' + esc(r.top_department || '-') + ')</option>';
+            });
+            setHTMLSafe(sel, opts);
+        } catch(e) {
+            setHTMLSafe(_('#ivCandidate'), '<option value="">加载失败</option>');
+        }
+    }
+
+    _('#ivSaveBtn').addEventListener('click', async function() {
+        var saveBtn = this;
+        saveBtn.disabled = true;
+        setHTMLSafe(saveBtn, '<span class="spinner"></span>保存中');
+        var dVal = _('#ivDate').value, tVal = _('#ivTime').value;
+        var fullTime = dVal + 'T' + (tVal || '09:00') + ':00';
+
+        try {
+            var targetId = recordId;
+            if (!targetId) {
+                var selEl = _('#ivCandidate');
+                targetId = parseInt(selEl.value);
+                if (!targetId) { showToast('请选择候选人', 'error'); saveBtn.disabled = false; setHTMLSafe(saveBtn, '💾 保存'); return; }
+            }
+            var r = await fetch('/api/interview/' + targetId + '/time', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ interview_time: fullTime }),
+            });
+            var result = await r.json();
+            if (result.success) {
+                showToast('面试时间已保存', 'success');
+                ivModal.classList.add('hidden');
+                ivModal.classList.remove('exit');
+                document.body.classList.remove('modal-open');
+                await loadEvents();
+                renderCalendar();
+            } else {
+                showToast(result.message || '保存失败', 'error');
+                saveBtn.disabled = false;
+                setHTMLSafe(saveBtn, '💾 保存');
+            }
+        } catch(err) {
+            showToast('保存失败: ' + err.message, 'error');
+            saveBtn.disabled = false;
+            setHTMLSafe(saveBtn, '💾 保存');
+        }
+    });
+
+    var clearBtn = _('#ivClearBtn');
+    if (clearBtn) {
+        clearBtn.addEventListener('click', async function() {
+            if (!confirm('确定清除该面试时间？')) return;
+            try {
+                var r = await fetch('/api/interview/' + recordId + '/time', { method: 'DELETE' });
+                var result = await r.json();
+                if (result.success) {
+                    showToast('面试时间已清除', 'success');
+                    ivModal.classList.add('hidden');
+                    ivModal.classList.remove('exit');
+                    document.body.classList.remove('modal-open');
+                    await loadEvents();
+                    renderCalendar();
+                } else { showToast(result.message || '操作失败', 'error'); }
+            } catch(err) { showToast('操作失败: ' + err.message, 'error'); }
+        });
+    }
+}
+
+(async function initCalendar() {
+    await loadEvents();
+    renderCalendar();
+})();
+
+document.addEventListener('click', function(e) {
+    if (e.target.id === 'ivModalClose' || e.target.id === 'interviewModal') {
+        var im = _('#interviewModal');
+        im.classList.add('hidden');
+        im.classList.remove('exit');
+        document.body.classList.remove('modal-open');
+    }
+});
+
+document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape') {
+        var im = _('#interviewModal');
+        if (im && !im.classList.contains('hidden')) {
+            im.classList.add('hidden');
+            im.classList.remove('exit');
+            document.body.classList.remove('modal-open');
+        }
+    }
+});
+/* ========== END CALENDAR ========== */
+    </script>
+</body>
+</html>
